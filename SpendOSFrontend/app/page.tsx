@@ -1,42 +1,37 @@
 import Link from "next/link";
+import HeroSection from '@/components/shadcn-studio/blocks/hero-section-01/hero-section-01'
+import Header from '@/components/shadcn-studio/blocks/hero-section-01/header'
+import type { NavigationSection } from '@/components/shadcn-studio/blocks/hero-section-01/header'
 
-export default function Home() {
+
+
+
+const navigationData: NavigationSection[] = [
+  {
+    title: 'Home',
+    href: '/'
+  },
+  {
+    title: 'About',
+    href: '#'
+  },
+  {
+    title: 'Contract',
+    href: '#'
+  }
+]
+
+const HeroSectionPage = () => {
   return (
-    <>
-      <header className="w-full">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="flex h-16 items-center justify-between">
-            <Link href="/" className="flex items-center space-x-2">
-              <span className="font-semibold text-lg">SpendOS</span>
-            </Link>
+    <div className="relative">
 
-            <nav>
-              <ul className="flex items-center gap-4">
-                <li>
-                  <Link href="/auth/login" className="text-sm font-medium hover:underline">
-                    Login
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    href="/auth/register"
-                    className="inline-flex items-center rounded-md px-3 py-1.5 text-sm font-semibold"
-                  >
-                    Register
-                  </Link>
-                </li>
-              </ul>
-            </nav>
-          </div>
-        </div>
-      </header>
+      <Header navigationData={navigationData} />
 
-      <main className="flex min-h-[calc(100vh-64px)] flex-col items-center justify-center p-24">
-        <div className="mb-8 text-center">
-          <h1 className="text-4xl font-bold">Welcome to the Home Page</h1>
-          <p className="mt-4 text-lg">This is a sample Next.js application.</p>
-        </div>
+      <main className="flex flex-col">
+        <HeroSection />
       </main>
-    </>
-  );
+    </div>
+  )
 }
+
+export default HeroSectionPage
