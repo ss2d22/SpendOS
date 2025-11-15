@@ -1,0 +1,29 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+solc_version = "0.8.30"
+optimizer = true
+optimizer_runs = 200
+via_ir = true
+
+# Testing configuration
+[profile.default.fuzz]
+runs = 256
+
+[profile.default.invariant]
+runs = 256
+depth = 15
+
+# Gas reporting
+gas_reports = ["*"]
+
+# Arc Testnet configuration
+[rpc_endpoints]
+arc_testnet = "https://rpc.testnet.arc.network"
+
+[etherscan.arc_testnet]
+key = "${BLOCKSCOUT_API_KEY}"
+url = "https://testnet.arcscan.app/api"
+
+# See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
