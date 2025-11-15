@@ -1,17 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.30;
 
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {ValidationLib} from "./libraries/ValidationLib.sol";
 
 /**
  * @title Treasury
  * @notice Main contract for Arc SpendOS treasury management
  * @dev Manages spend accounts, budgets, approvals, and cross-chain spends via Circle Gateway
  */
-contract Treasury is Ownable, ReentrancyGuard {
-    using ValidationLib for *;
+contract Treasury is ReentrancyGuard {
 
     /*//////////////////////////////////////////////////////////////
                                  TYPES
@@ -19,13 +16,6 @@ contract Treasury is Ownable, ReentrancyGuard {
 
     enum AccountStatus { Active, Frozen, Closed }
     enum SpendStatus { PendingApproval, Approved, Rejected, Executed, Failed }
-
-    struct GlobalPolicy {
-        uint256 defaultPerTxLimit;
-        uint256 defaultDailyLimit;
-        uint256 defaultApprovalThreshold;
-        uint256[] defaultAllowedChains;
-    }
 
     struct SpendAccount {
         uint256 id;
@@ -37,11 +27,13 @@ contract Treasury is Ownable, ReentrancyGuard {
         uint256 periodStart;
         uint256 periodDuration; // in seconds
         uint256 periodSpent;
+        uint256 periodReserved; // Reserved for approved but not executed requests
 
         // Limits
         uint256 perTxLimit;
-        uint256 dailyLimit;
+        uint256 dailyLimit; // Note: enforced at approval time, not execution time
         uint256 dailySpent;
+        uint256 dailyReserved; // Reserved for approved but not executed requests (same day)
         uint256 lastDayTimestamp;
 
         // Approval
@@ -103,9 +95,6 @@ contract Treasury is Ownable, ReentrancyGuard {
     mapping(uint256 => SpendRequest) public spendRequests;
     uint256 public nextRequestId;
 
-    // Global policy
-    GlobalPolicy public policy;
-
     // Budget tracking
     uint256 public totalCommittedBudget;
 
@@ -114,6 +103,12 @@ contract Treasury is Ownable, ReentrancyGuard {
 
     // Paused state
     bool public paused;
+
+    // String length limits
+    uint256 public constant MAX_LABEL_LENGTH = 64;
+    uint256 public constant MAX_DESCRIPTION_LENGTH = 256;
+    uint256 public constant MAX_REASON_LENGTH = 256;
+    uint256 public constant MAX_GATEWAY_TX_ID_LENGTH = 128;
 
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
@@ -186,13 +181,13 @@ contract Treasury is Ownable, ReentrancyGuard {
     event SweepExecuted(uint256 indexed accountId, uint256 amount);
 
     // Admin events
-    event AlertTriggered(string alertType, uint256 accountId, string message);
     event ManagerAdded(address indexed manager);
     event ManagerRemoved(address indexed manager);
     event BackendOperatorAdded(address indexed operator);
     event BackendOperatorRemoved(address indexed operator);
     event GatewayConfigUpdated(bytes32 orgId, address walletAddress);
     event ChainSupportUpdated(uint256 chainId, bool supported);
+    event AdminTransferred(address indexed previousAdmin, address indexed newAdmin);
     event ContractPaused();
     event ContractUnpaused();
 
@@ -274,18 +269,12 @@ contract Treasury is Ownable, ReentrancyGuard {
     constructor(
         address _admin,
         address _gatewayWalletAddress
-    ) Ownable(_admin) validAddress(_admin) validAddress(_gatewayWalletAddress) {
+    ) validAddress(_admin) validAddress(_gatewayWalletAddress) {
         admin = _admin;
         gatewayWalletAddress = _gatewayWalletAddress;
 
-        // Initialize default policy
-        policy.defaultPerTxLimit = 1000 * 10**6; // 1000 USDC (6 decimals)
-        policy.defaultDailyLimit = 5000 * 10**6;  // 5000 USDC
-        policy.defaultApprovalThreshold = 500 * 10**6; // 500 USDC
-
         // Add Arc Testnet as default supported chain
         supportedChains[5042002] = true; // Arc Testnet
-        policy.defaultAllowedChains.push(5042002);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -299,6 +288,7 @@ contract Treasury is Ownable, ReentrancyGuard {
      * @param budgetPerPeriod Budget amount per period (in USDC, 6 decimals)
      * @param periodDuration Duration of budget period in seconds
      * @param perTxLimit Maximum amount per transaction (in USDC, 6 decimals)
+     * @param dailyLimit Maximum amount per day (in USDC, 6 decimals, 0 = use perTxLimit)
      * @param approvalThreshold Amounts above this require approval (in USDC, 6 decimals)
      * @param approver Address of the manager who can approve spends
      * @param allowedChains Array of chain IDs where spends are allowed
@@ -310,16 +300,18 @@ contract Treasury is Ownable, ReentrancyGuard {
         uint256 budgetPerPeriod,
         uint256 periodDuration,
         uint256 perTxLimit,
+        uint256 dailyLimit,
         uint256 approvalThreshold,
         address approver,
         uint256[] calldata allowedChains
     ) external onlyAdmin whenNotPaused validAddress(owner) validAddress(approver) returns (uint256) {
         // Validations
-        require(bytes(label).length > 0 && bytes(label).length <= 64, "Invalid label length");
+        require(bytes(label).length > 0 && bytes(label).length <= MAX_LABEL_LENGTH, "Invalid label length");
         require(budgetPerPeriod > 0, "Budget must be > 0");
         require(periodDuration >= 1 days, "Period must be >= 1 day");
         require(perTxLimit > 0 && perTxLimit <= budgetPerPeriod, "Invalid per-tx limit");
         require(approvalThreshold <= perTxLimit, "Approval threshold > per-tx limit");
+        require(dailyLimit == 0 || dailyLimit >= perTxLimit, "Daily limit < perTxLimit");
         require(allowedChains.length > 0, "Must allow at least one chain");
 
         // Validate all chains are supported
@@ -342,7 +334,7 @@ contract Treasury is Ownable, ReentrancyGuard {
         account.approver = approver;
         account.status = AccountStatus.Active;
         account.allowedChains = allowedChains;
-        account.dailyLimit = perTxLimit; // Default daily limit = per-tx limit
+        account.dailyLimit = dailyLimit > 0 ? dailyLimit : perTxLimit; // Default to perTxLimit if not specified
         account.dailySpent = 0;
         account.lastDayTimestamp = block.timestamp;
         account.createdAt = block.timestamp;
@@ -361,6 +353,7 @@ contract Treasury is Ownable, ReentrancyGuard {
      * @param accountId The account ID to update
      * @param budgetPerPeriod New budget per period (0 to keep current)
      * @param perTxLimit New per-transaction limit (0 to keep current)
+     * @param dailyLimit New daily limit (0 to keep current)
      * @param approvalThreshold New approval threshold (0 to keep current)
      * @param approver New approver address (address(0) to keep current)
      */
@@ -368,12 +361,18 @@ contract Treasury is Ownable, ReentrancyGuard {
         uint256 accountId,
         uint256 budgetPerPeriod,
         uint256 perTxLimit,
+        uint256 dailyLimit,
         uint256 approvalThreshold,
         address approver
     ) external onlyAdmin accountExists(accountId) {
         SpendAccount storage account = spendAccounts[accountId];
+        require(account.status != AccountStatus.Closed, "Account closed");
 
         if (budgetPerPeriod > 0) {
+            // Validate new budget covers existing allocations
+            uint256 allocated = account.periodSpent + account.periodReserved;
+            require(budgetPerPeriod >= allocated, "New budget must cover existing allocations");
+
             // Update committed budget tracking
             totalCommittedBudget = totalCommittedBudget - account.budgetPerPeriod + budgetPerPeriod;
             account.budgetPerPeriod = budgetPerPeriod;
@@ -381,7 +380,15 @@ contract Treasury is Ownable, ReentrancyGuard {
 
         if (perTxLimit > 0) {
             require(perTxLimit <= account.budgetPerPeriod, "Per-tx limit > budget");
+            require(perTxLimit <= account.dailyLimit, "Per-tx limit > daily limit");
             account.perTxLimit = perTxLimit;
+            // Ensure existing approval threshold is still valid
+            require(account.approvalThreshold <= perTxLimit, "Existing approval threshold > new per-tx limit");
+        }
+
+        if (dailyLimit > 0) {
+            require(dailyLimit >= account.perTxLimit, "Daily limit < perTxLimit");
+            account.dailyLimit = dailyLimit;
         }
 
         if (approvalThreshold > 0) {
@@ -424,12 +431,117 @@ contract Treasury is Ownable, ReentrancyGuard {
         emit SpendAccountUnfrozen(accountId);
     }
 
+    /**
+     * @notice Close a spend account permanently
+     * @param accountId The account ID to close
+     */
+    function closeAccount(uint256 accountId) external onlyAdmin accountExists(accountId) {
+        SpendAccount storage account = spendAccounts[accountId];
+        require(account.status != AccountStatus.Closed, "Account already closed");
+        require(account.periodReserved == 0, "Cannot close with pending reservations");
+
+        // Update total committed budget
+        totalCommittedBudget -= account.budgetPerPeriod;
+
+        account.status = AccountStatus.Closed;
+        account.updatedAt = block.timestamp;
+
+        emit SpendAccountClosed(accountId);
+    }
+
+    /**
+     * @notice Update allowed chains for an account
+     * @param accountId The account ID to update
+     * @param allowedChains New array of allowed chain IDs
+     */
+    function updateAllowedChains(
+        uint256 accountId,
+        uint256[] calldata allowedChains
+    ) external onlyAdmin accountExists(accountId) {
+        SpendAccount storage account = spendAccounts[accountId];
+        require(account.status != AccountStatus.Closed, "Account closed");
+        require(allowedChains.length > 0, "Must allow at least one chain");
+
+        // Validate all chains are supported
+        for (uint256 i = 0; i < allowedChains.length; i++) {
+            require(supportedChains[allowedChains[i]], "Unsupported chain");
+        }
+
+        account.allowedChains = allowedChains;
+        account.updatedAt = block.timestamp;
+
+        emit SpendAccountUpdated(accountId);
+    }
+
+    /**
+     * @notice Configure auto-topup settings for an account
+     * @param accountId The account ID to configure
+     * @param minBalance Minimum balance threshold to trigger topup
+     * @param targetBalance Target balance after topup
+     */
+    function setAutoTopupConfig(
+        uint256 accountId,
+        uint256 minBalance,
+        uint256 targetBalance
+    ) external onlyManager accountExists(accountId) {
+        SpendAccount storage account = spendAccounts[accountId];
+        require(account.status != AccountStatus.Closed, "Account closed");
+        require(minBalance > 0, "Min balance must be > 0");
+        require(targetBalance > 0, "Target balance must be > 0");
+        require(targetBalance > minBalance, "Target must be > min");
+
+        account.minBalance = minBalance;
+        account.targetBalance = targetBalance;
+        account.updatedAt = block.timestamp;
+
+        emit SpendAccountUpdated(accountId);
+    }
+
+    /**
+     * @notice Execute auto-topup for an account
+     * @dev This uses a virtual balance approach - tracks budget allocation rather than actual USDC
+     * @dev Available balance = budgetPerPeriod - (periodSpent + periodReserved)
+     * @param accountId The account ID to topup
+     */
+    function autoTopup(uint256 accountId) external onlyManager accountExists(accountId) {
+        SpendAccount storage account = spendAccounts[accountId];
+        require(account.status == AccountStatus.Active, "Account not active");
+        require(account.minBalance > 0 && account.targetBalance > 0, "Auto-topup not configured");
+
+        // Calculate available balance: budgetPerPeriod - (periodSpent + periodReserved)
+        uint256 allocated = account.periodSpent + account.periodReserved;
+        uint256 currentBalance = account.budgetPerPeriod > allocated
+            ? account.budgetPerPeriod - allocated
+            : 0;
+
+        require(currentBalance < account.minBalance, "Balance above minimum");
+
+        // Calculate topup amount
+        uint256 topupAmount = account.targetBalance > currentBalance
+            ? account.targetBalance - currentBalance
+            : 0;
+
+        require(topupAmount > 0, "No topup needed");
+
+        // Increase budget for current period
+        account.budgetPerPeriod += topupAmount;
+        totalCommittedBudget += topupAmount;
+        account.updatedAt = block.timestamp;
+
+        emit AutoTopup(accountId, topupAmount);
+    }
+
     /*//////////////////////////////////////////////////////////////
                         SPEND REQUEST FLOW
     //////////////////////////////////////////////////////////////*/
 
     /**
      * @notice Request a spend from an account
+     * @dev Daily limit semantics: The dailyLimit is enforced at approval time based on
+     *      dailySpent + dailyReserved. Requests approved on Day 1 but executed on Day 2
+     *      will have their reservations reset when the day changes, but the actual execution
+     *      on Day 2 counts against Day 2's dailySpent. This means the limit controls
+     *      "approval rate per day" rather than "execution rate per day".
      * @param accountId The spend account to use
      * @param amount Amount to spend (in USDC, 6 decimals)
      * @param chainId Destination chain ID
@@ -452,11 +564,17 @@ contract Treasury is Ownable, ReentrancyGuard {
         // Validation: Caller must be account owner
         require(msg.sender == account.owner, "Not account owner");
 
+        // Validation: String length
+        require(bytes(description).length <= MAX_DESCRIPTION_LENGTH, "Description too long");
+
         // Validation: Amount must be > 0 and <= per-tx limit
         require(amount > 0, "Amount must be > 0");
         require(amount <= account.perTxLimit, "Exceeds per-tx limit");
 
-        // Validation: Chain must be allowed
+        // Validation: Chain must be globally supported
+        require(supportedChains[chainId], "Chain not globally supported");
+
+        // Validation: Chain must be allowed for this account
         bool chainAllowed = false;
         for (uint256 i = 0; i < account.allowedChains.length; i++) {
             if (account.allowedChains[i] == chainId) {
@@ -464,14 +582,14 @@ contract Treasury is Ownable, ReentrancyGuard {
                 break;
             }
         }
-        require(chainAllowed, "Chain not allowed");
+        require(chainAllowed, "Chain not allowed for account");
 
-        // Validation: Check daily limit
+        // Validation: Check daily limit (spent + reserved)
         _updateDailySpent(accountId);
-        require(account.dailySpent + amount <= account.dailyLimit, "Exceeds daily limit");
+        require(account.dailySpent + account.dailyReserved + amount <= account.dailyLimit, "Exceeds daily limit");
 
-        // Validation: Check period budget
-        require(account.periodSpent + amount <= account.budgetPerPeriod, "Exceeds period budget");
+        // Validation: Check period budget (spent + reserved)
+        require(account.periodSpent + account.periodReserved + amount <= account.budgetPerPeriod, "Exceeds period budget");
 
         // Create spend request
         uint256 requestId = nextRequestId++;
@@ -491,6 +609,11 @@ contract Treasury is Ownable, ReentrancyGuard {
             request.status = SpendStatus.Approved;
             request.approvedAt = block.timestamp;
 
+            // Reserve amounts for this approved request
+            account.periodReserved += amount;
+            account.dailyReserved += amount;
+            account.updatedAt = block.timestamp;
+
             emit SpendApproved(requestId, accountId, address(this), amount);
         } else {
             request.status = SpendStatus.PendingApproval;
@@ -505,7 +628,7 @@ contract Treasury is Ownable, ReentrancyGuard {
      * @notice Approve a pending spend request
      * @param requestId The request ID to approve
      */
-    function approveSpend(uint256 requestId) external requestExists(requestId) nonReentrant {
+    function approveSpend(uint256 requestId) external whenNotPaused requestExists(requestId) nonReentrant {
         SpendRequest storage request = spendRequests[requestId];
         SpendAccount storage account = spendAccounts[request.accountId];
 
@@ -518,19 +641,27 @@ contract Treasury is Ownable, ReentrancyGuard {
         // Validation: Request must be pending
         require(request.status == SpendStatus.PendingApproval, "Request not pending");
 
+        // Validation: Account must be active
+        require(account.status == AccountStatus.Active, "Account not active");
+
         // Re-validate budget constraints (in case period was reset)
         _updateDailySpent(request.accountId);
         require(
-            account.periodSpent + request.amount <= account.budgetPerPeriod,
+            account.periodSpent + account.periodReserved + request.amount <= account.budgetPerPeriod,
             "Exceeds period budget"
         );
         require(
-            account.dailySpent + request.amount <= account.dailyLimit,
+            account.dailySpent + account.dailyReserved + request.amount <= account.dailyLimit,
             "Exceeds daily limit"
         );
 
         request.status = SpendStatus.Approved;
         request.approvedAt = block.timestamp;
+
+        // Reserve amounts for this approved request
+        account.periodReserved += request.amount;
+        account.dailyReserved += request.amount;
+        account.updatedAt = block.timestamp;
 
         emit SpendApproved(requestId, request.accountId, msg.sender, request.amount);
     }
@@ -543,6 +674,9 @@ contract Treasury is Ownable, ReentrancyGuard {
     function rejectSpend(uint256 requestId, string calldata reason) external requestExists(requestId) {
         SpendRequest storage request = spendRequests[requestId];
         SpendAccount storage account = spendAccounts[request.accountId];
+
+        // Validation: String length
+        require(bytes(reason).length <= MAX_REASON_LENGTH, "Reason too long");
 
         // Validation: Caller must be approver or admin
         require(
@@ -566,9 +700,12 @@ contract Treasury is Ownable, ReentrancyGuard {
     function markSpendExecuted(
         uint256 requestId,
         string calldata gatewayTxId
-    ) external onlyBackend requestExists(requestId) nonReentrant {
+    ) external whenNotPaused onlyBackend requestExists(requestId) nonReentrant {
         SpendRequest storage request = spendRequests[requestId];
         SpendAccount storage account = spendAccounts[request.accountId];
+
+        // Validation: String length
+        require(bytes(gatewayTxId).length > 0 && bytes(gatewayTxId).length <= MAX_GATEWAY_TX_ID_LENGTH, "Invalid gateway tx ID");
 
         // Validation: Request must be approved
         require(request.status == SpendStatus.Approved, "Request not approved");
@@ -578,8 +715,18 @@ contract Treasury is Ownable, ReentrancyGuard {
         request.executedAt = block.timestamp;
         request.gatewayTxId = gatewayTxId;
 
-        // Update account spending
+        // Update daily spent (resets if new day)
+        _updateDailySpent(request.accountId);
+
+        // Move from reserved to spent
+        account.periodReserved -= request.amount;
         account.periodSpent += request.amount;
+
+        // Only decrease dailyReserved if we're still in the same day as approval
+        // (if day changed, dailyReserved was already reset to 0 by _updateDailySpent)
+        if (account.dailyReserved >= request.amount) {
+            account.dailyReserved -= request.amount;
+        }
         account.dailySpent += request.amount;
         account.updatedAt = block.timestamp;
 
@@ -596,11 +743,27 @@ contract Treasury is Ownable, ReentrancyGuard {
         string calldata reason
     ) external onlyBackend requestExists(requestId) {
         SpendRequest storage request = spendRequests[requestId];
+        SpendAccount storage account = spendAccounts[request.accountId];
+
+        // Validation: String length
+        require(bytes(reason).length <= MAX_REASON_LENGTH, "Reason too long");
 
         // Validation: Request must be approved
         require(request.status == SpendStatus.Approved, "Request not approved");
 
         request.status = SpendStatus.Failed;
+
+        // Release reservation
+        account.periodReserved -= request.amount;
+
+        // Update daily spent (resets if new day)
+        _updateDailySpent(request.accountId);
+
+        // Only decrease dailyReserved if we're still in the same day as approval
+        if (account.dailyReserved >= request.amount) {
+            account.dailyReserved -= request.amount;
+        }
+        account.updatedAt = block.timestamp;
 
         emit SpendFailed(requestId, request.accountId, reason);
     }
@@ -613,14 +776,18 @@ contract Treasury is Ownable, ReentrancyGuard {
      * @notice Reset the budget period for an account
      * @param accountId The account ID to reset
      */
-    function resetPeriod(uint256 accountId) external accountExists(accountId) {
+    function resetPeriod(uint256 accountId) external onlyManager accountExists(accountId) {
         SpendAccount storage account = spendAccounts[accountId];
+        require(account.status != AccountStatus.Closed, "Account closed");
 
         // Validation: Period must have ended
         require(
             block.timestamp >= account.periodStart + account.periodDuration,
             "Period not ended"
         );
+
+        // Validation: Cannot reset if there are pending reservations (approved but not executed requests)
+        require(account.periodReserved == 0, "Cannot reset with pending reservations");
 
         uint256 previousSpent = account.periodSpent;
 
@@ -630,6 +797,42 @@ contract Treasury is Ownable, ReentrancyGuard {
         account.updatedAt = block.timestamp;
 
         emit PeriodReset(accountId, account.periodStart, previousSpent);
+    }
+
+    /**
+     * @notice Sweep unspent budget from an account at end of period
+     * @dev Returns unspent virtual balance to treasury (reduces committed budget)
+     * @param accountId The account ID to sweep
+     */
+    function sweepAccount(uint256 accountId) external onlyManager accountExists(accountId) {
+        SpendAccount storage account = spendAccounts[accountId];
+
+        // Validation: Account must not be closed
+        require(account.status != AccountStatus.Closed, "Cannot sweep closed account");
+
+        // Validation: Period must have ended
+        require(
+            block.timestamp >= account.periodStart + account.periodDuration,
+            "Period not ended"
+        );
+
+        // Calculate unspent amount (must account for reservations)
+        // unspent = budgetPerPeriod - (periodSpent + periodReserved)
+        uint256 allocated = account.periodSpent + account.periodReserved;
+        uint256 unspent = account.budgetPerPeriod > allocated
+            ? account.budgetPerPeriod - allocated
+            : 0;
+
+        require(unspent > 0, "No funds to sweep");
+
+        // Reduce committed budget by unspent amount
+        totalCommittedBudget -= unspent;
+
+        // Reduce account budget by unspent amount
+        account.budgetPerPeriod -= unspent;
+        account.updatedAt = block.timestamp;
+
+        emit SweepExecuted(accountId, unspent);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -645,6 +848,7 @@ contract Treasury is Ownable, ReentrancyGuard {
         uint256 amount,
         string calldata gatewayTxId
     ) external onlyBackend {
+        require(bytes(gatewayTxId).length > 0 && bytes(gatewayTxId).length <= MAX_GATEWAY_TX_ID_LENGTH, "Invalid gateway tx ID");
         emit InboundFunding(amount, gatewayTxId, block.timestamp);
     }
 
@@ -657,6 +861,7 @@ contract Treasury is Ownable, ReentrancyGuard {
         uint256 amount,
         string calldata gatewayTxId
     ) external onlyBackend {
+        require(bytes(gatewayTxId).length > 0 && bytes(gatewayTxId).length <= MAX_GATEWAY_TX_ID_LENGTH, "Invalid gateway tx ID");
         emit OutboundFunding(amount, gatewayTxId, block.timestamp);
     }
 
@@ -725,7 +930,29 @@ contract Treasury is Ownable, ReentrancyGuard {
     }
 
     /**
+     * @notice Transfer admin rights to a new address
+     * @param newAdmin Address of the new admin
+     */
+    function transferAdmin(address newAdmin) external onlyAdmin validAddress(newAdmin) {
+        require(newAdmin != admin, "Already admin");
+        address previousAdmin = admin;
+        admin = newAdmin;
+        emit AdminTransferred(previousAdmin, newAdmin);
+    }
+
+    /**
      * @notice Pause the contract (emergency use)
+     * @dev When paused, the following operations are blocked:
+     *      - createSpendAccount: Cannot create new accounts
+     *      - requestSpend: Cannot request new spends
+     *      - approveSpend: Cannot approve pending requests
+     *      - markSpendExecuted: Cannot mark spends as executed
+     *
+     *      The following cleanup operations remain available when paused:
+     *      - rejectSpend: Can reject pending requests
+     *      - markSpendFailed: Can mark approved requests as failed
+     *
+     *      This allows emergency shutdown while still permitting failure cleanup.
      */
     function pause() external onlyAdmin {
         paused = true;
@@ -753,6 +980,7 @@ contract Treasury is Ownable, ReentrancyGuard {
         // Check if we're in a new day (simple 24h rolling window)
         if (block.timestamp >= account.lastDayTimestamp + 1 days) {
             account.dailySpent = 0;
+            account.dailyReserved = 0; // Also reset daily reservations
             account.lastDayTimestamp = block.timestamp;
         }
     }
