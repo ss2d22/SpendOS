@@ -1,0 +1,224 @@
+[
+  {
+    "inputs": [
+      { "internalType": "uint256", "name": "requestId", "type": "uint256" },
+      { "internalType": "string", "name": "gatewayTxId", "type": "string" }
+    ],
+    "name": "markSpendExecuted",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "uint256", "name": "requestId", "type": "uint256" },
+      { "internalType": "string", "name": "reason", "type": "string" }
+    ],
+    "name": "markSpendFailed",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "uint256", "name": "amount", "type": "uint256" },
+      { "internalType": "string", "name": "gatewayTxId", "type": "string" }
+    ],
+    "name": "recordInboundFunding",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "uint256", "name": "accountId", "type": "uint256" }
+    ],
+    "name": "getAccount",
+    "outputs": [
+      {
+        "components": [
+          { "internalType": "address", "name": "owner", "type": "address" },
+          { "internalType": "address", "name": "approver", "type": "address" },
+          { "internalType": "string", "name": "label", "type": "string" },
+          { "internalType": "uint256", "name": "budgetPerPeriod", "type": "uint256" },
+          { "internalType": "uint256", "name": "periodDuration", "type": "uint256" },
+          { "internalType": "uint256", "name": "perTxLimit", "type": "uint256" },
+          { "internalType": "uint256", "name": "dailyLimit", "type": "uint256" },
+          { "internalType": "uint256", "name": "approvalThreshold", "type": "uint256" },
+          { "internalType": "uint256", "name": "periodSpent", "type": "uint256" },
+          { "internalType": "uint256", "name": "periodReserved", "type": "uint256" },
+          { "internalType": "uint256", "name": "dailySpent", "type": "uint256" },
+          { "internalType": "uint256", "name": "dailyReserved", "type": "uint256" },
+          { "internalType": "uint256", "name": "periodStart", "type": "uint256" },
+          { "internalType": "uint256", "name": "dailyResetAt", "type": "uint256" },
+          { "internalType": "bool", "name": "frozen", "type": "bool" },
+          { "internalType": "bool", "name": "closed", "type": "bool" },
+          { "internalType": "uint256[]", "name": "allowedChains", "type": "uint256[]" },
+          { "internalType": "uint256", "name": "autoTopupMinBalance", "type": "uint256" },
+          { "internalType": "uint256", "name": "autoTopupTargetBalance", "type": "uint256" }
+        ],
+        "internalType": "struct Treasury.SpendAccount",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "uint256", "name": "requestId", "type": "uint256" }
+    ],
+    "name": "getRequest",
+    "outputs": [
+      {
+        "components": [
+          { "internalType": "uint256", "name": "accountId", "type": "uint256" },
+          { "internalType": "address", "name": "requester", "type": "address" },
+          { "internalType": "uint256", "name": "amount", "type": "uint256" },
+          { "internalType": "uint256", "name": "chainId", "type": "uint256" },
+          { "internalType": "address", "name": "destinationAddress", "type": "address" },
+          { "internalType": "string", "name": "description", "type": "string" },
+          { "internalType": "uint8", "name": "status", "type": "uint8" },
+          { "internalType": "uint256", "name": "requestedAt", "type": "uint256" },
+          { "internalType": "string", "name": "gatewayTxId", "type": "string" }
+        ],
+        "internalType": "struct Treasury.SpendRequest",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "uint256", "name": "requestId", "type": "uint256" },
+      { "indexed": true, "internalType": "uint256", "name": "accountId", "type": "uint256" },
+      { "indexed": false, "internalType": "address", "name": "requester", "type": "address" },
+      { "indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256" },
+      { "indexed": false, "internalType": "uint256", "name": "chainId", "type": "uint256" },
+      { "indexed": false, "internalType": "address", "name": "destinationAddress", "type": "address" },
+      { "indexed": false, "internalType": "string", "name": "description", "type": "string" }
+    ],
+    "name": "SpendRequested",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "uint256", "name": "requestId", "type": "uint256" },
+      { "indexed": true, "internalType": "uint256", "name": "accountId", "type": "uint256" },
+      { "indexed": false, "internalType": "address", "name": "approver", "type": "address" },
+      { "indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256" }
+    ],
+    "name": "SpendApproved",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "uint256", "name": "requestId", "type": "uint256" },
+      { "indexed": true, "internalType": "uint256", "name": "accountId", "type": "uint256" },
+      { "indexed": false, "internalType": "address", "name": "approver", "type": "address" },
+      { "indexed": false, "internalType": "string", "name": "reason", "type": "string" }
+    ],
+    "name": "SpendRejected",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "uint256", "name": "requestId", "type": "uint256" },
+      { "indexed": true, "internalType": "uint256", "name": "accountId", "type": "uint256" },
+      { "indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256" },
+      { "indexed": false, "internalType": "string", "name": "gatewayTxId", "type": "string" }
+    ],
+    "name": "SpendExecuted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "uint256", "name": "requestId", "type": "uint256" },
+      { "indexed": true, "internalType": "uint256", "name": "accountId", "type": "uint256" },
+      { "indexed": false, "internalType": "string", "name": "reason", "type": "string" }
+    ],
+    "name": "SpendFailed",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "uint256", "name": "accountId", "type": "uint256" },
+      { "indexed": false, "internalType": "address", "name": "owner", "type": "address" },
+      { "indexed": false, "internalType": "string", "name": "label", "type": "string" },
+      { "indexed": false, "internalType": "uint256", "name": "budgetPerPeriod", "type": "uint256" }
+    ],
+    "name": "SpendAccountCreated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "uint256", "name": "accountId", "type": "uint256" }
+    ],
+    "name": "SpendAccountUpdated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "uint256", "name": "accountId", "type": "uint256" }
+    ],
+    "name": "SpendAccountFrozen",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "uint256", "name": "accountId", "type": "uint256" }
+    ],
+    "name": "SpendAccountUnfrozen",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "uint256", "name": "accountId", "type": "uint256" }
+    ],
+    "name": "SpendAccountClosed",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256" },
+      { "indexed": false, "internalType": "string", "name": "gatewayTxId", "type": "string" }
+    ],
+    "name": "InboundFunding",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "address", "name": "previousAdmin", "type": "address" },
+      { "indexed": true, "internalType": "address", "name": "newAdmin", "type": "address" }
+    ],
+    "name": "AdminTransferred",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [],
+    "name": "ContractPaused",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [],
+    "name": "ContractUnpaused",
+    "type": "event"
+  }
+]

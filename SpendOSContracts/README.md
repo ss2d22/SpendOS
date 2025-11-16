@@ -11,9 +11,11 @@ The Arc SpendOS smart contracts provide on-chain programmable treasury managemen
 ├── src/
 │   └── Treasury.sol              # Main treasury contract
 ├── test/
-│   └── Treasury.t.sol            # Comprehensive test suite
+│   └── Treasury.t.sol            # Comprehensive test suite (49 tests)
 ├── script/
-│   └── SetupDemo.s.sol           # Demo setup script (tbd)
+│   ├── Deploy.s.sol              # Main deployment script
+│   └── SetupDemo.s.sol           # Demo account setup script
+├── README.md                     # this file
 ├── foundry.toml                  # Foundry configuration
 └── .env.example                  # Environment variables template
 ```
@@ -56,28 +58,43 @@ forge test -vvv
 
 ## Deployment
 
-### 1. Deploy Treasury Contract
-
 ```bash
-# Set environment variables
+# 1. Setup environment
+cp .env.example .env
+nano .env  # Fill in PRIVATE_KEY, BACKEND_WALLET_ADDRESS, and BLOCKSCOUT_API_KEY
 source .env
 
-# Deploy to Arc Testnet
-follw command on arc docs for deploying i will update this soon
-# Save the deployed Treasury address to .env
-# TREASURY_CONTRACT_ADDRESS=<address from deployment>
-```
+# 2. Get testnet USDC from https://faucet.circle.com
 
-### 2. Setup Demo Accounts (Optional)
+# 3. Get Blockscout API key from https://testnet.arcscan.app/account/api-key (for verification)
 
-scripts are tbd if i have time after finishing the backend server and frontend will add this otherwise will do so after the hack
+# 4. Deploy Treasury
+forge script script/Deploy.s.sol:DeployScript \
+  --rpc-url $ARC_TESTNET_RPC_URL \
+  --broadcast
 
-```bash
-# Create demo spend accounts
+# 5. Save contract address to .env
+echo "TREASURY_CONTRACT_ADDRESS=0x..." >> .env
+source .env
+
+# 6. (Optional) Create demo accounts
 forge script script/SetupDemo.s.sol:SetupDemoScript \
   --rpc-url $ARC_TESTNET_RPC_URL \
   --broadcast
 ```
+
+**Deployment Script Features:**
+
+- ✅ Deploys Treasury with admin and Gateway configuration
+- ✅ Adds backend operator for spend execution
+- ✅ Configures supported chains (Arc, Base Sepolia, Eth Sepolia, Avalanche Fuji)
+- ✅ Outputs verification commands and next steps
+
+**Demo Script Creates:**
+
+- ✅ Marketing account (2000 USDC/month, auto-topup)
+- ✅ Engineering account (5000 USDC/month)
+- ✅ Operations account (1000 USDC/week, auto-approve all)
 
 ## Contract Interaction Examples
 
