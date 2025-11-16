@@ -16,8 +16,10 @@ const GATEWAY_MINTER_ABI = [
   },
 ];
 
-// Gateway Minter addresses on different chains
+// Gateway Minter addresses on different chains (Testnet)
+// Reference: https://developers.circle.com/gateway/references/contract-addresses#gatewayminter
 const GATEWAY_MINTER_ADDRESSES: Record<number, string> = {
+  5042002: '0x0022222ABE238Cc2C7Bb1f21003F0a260052475B', // Arc Testnet
   84532: '0x0022222ABE238Cc2C7Bb1f21003F0a260052475B', // Base Sepolia
   11155111: '0x0022222ABE238Cc2C7Bb1f21003F0a260052475B', // Ethereum Sepolia
   43113: '0x0022222ABE238Cc2C7Bb1f21003F0a260052475B', // Avalanche Fuji
@@ -25,6 +27,7 @@ const GATEWAY_MINTER_ADDRESSES: Record<number, string> = {
 
 // RPC URLs for destination chains
 const CHAIN_RPC_URLS: Record<number, string> = {
+  5042002: 'https://rpc.testnet.arc.network', // Arc Testnet
   84532: 'https://sepolia.base.org',
   11155111: 'https://ethereum-sepolia-rpc.publicnode.com',
   43113: 'https://api.avax-test.network/ext/bc/C/rpc',

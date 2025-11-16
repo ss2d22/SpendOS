@@ -34,11 +34,33 @@ export class SpendExecutorService {
         throw new Error(`Spend request ${requestId} not found`);
       }
 
-      // Check status
+      // Check status - only proceed if APPROVED
+      // Skip if already executed, executing, failed, or rejected
+      if (spendRequest.status === SpendStatus.EXECUTED) {
+        this.logger.warn(
+          `Spend request ${requestId} already executed, skipping`,
+        );
+        return;
+      }
+
+      if (spendRequest.status === SpendStatus.EXECUTING) {
+        this.logger.warn(
+          `Spend request ${requestId} already executing, skipping duplicate`,
+        );
+        return;
+      }
+
       if (
-        spendRequest.status !== SpendStatus.APPROVED &&
-        spendRequest.status !== SpendStatus.EXECUTING
+        spendRequest.status === SpendStatus.FAILED ||
+        spendRequest.status === SpendStatus.REJECTED
       ) {
+        this.logger.warn(
+          `Spend request ${requestId} is ${spendRequest.status}, skipping`,
+        );
+        return;
+      }
+
+      if (spendRequest.status !== SpendStatus.APPROVED) {
         throw new Error(
           `Spend request ${requestId} is not in APPROVED status (current: ${spendRequest.status})`,
         );

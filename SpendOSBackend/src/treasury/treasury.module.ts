@@ -8,6 +8,7 @@ import { SpendAccount } from '../spend-accounts/entities/spend-account.entity';
 import { GatewayModule } from '../gateway/gateway.module';
 import { RedisModule } from '../redis/redis.module';
 import { AlertsModule } from '../alerts/alerts.module';
+import { BlockchainModule } from '../blockchain/blockchain.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { AlertsModule } from '../alerts/alerts.module';
     GatewayModule,
     RedisModule,
     AlertsModule,
+    BlockchainModule,
   ],
   controllers: [TreasuryController],
   providers: [TreasuryService, BalanceSyncService],

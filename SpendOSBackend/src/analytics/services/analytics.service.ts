@@ -18,13 +18,17 @@ export class AnalyticsService {
 
   async getRunway(): Promise<{ days: number; amount: string }> {
     const balance = await this.treasuryService.getBalance();
-    const burnRate = await this.calculateBurnRate(30);
+    const burnRateMicroUsdc = await this.calculateBurnRate(30);
 
-    if (parseFloat(burnRate) === 0) {
+    // Convert burn rate from micro USDC to USDC dollars for comparison
+    const burnRateUsdc = parseFloat(burnRateMicroUsdc) / 1e6;
+    const availableUsdc = parseFloat(balance.available);
+
+    if (burnRateUsdc === 0) {
       return { days: Infinity, amount: balance.available };
     }
 
-    const days = parseFloat(balance.available) / parseFloat(burnRate);
+    const days = availableUsdc / burnRateUsdc;
 
     return {
       days: Math.floor(days),

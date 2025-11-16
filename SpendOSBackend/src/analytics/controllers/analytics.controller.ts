@@ -39,22 +39,16 @@ export class AnalyticsController {
     schema: {
       type: 'object',
       properties: {
-        currentBalance: {
-          type: 'string',
-          example: '1000000000',
-          description: 'Current balance in USDC (6 decimals)',
-        },
-        dailyBurnRate: {
-          type: 'string',
-          example: '5000000',
-          description: 'Average daily spending',
-        },
-        runwayDays: {
+        days: {
           type: 'number',
           example: 200,
           description: 'Days until funds depleted',
         },
-        runwayDate: { type: 'string', format: 'date', example: '2025-07-04' },
+        amount: {
+          type: 'string',
+          example: '1000.00',
+          description: 'Available balance in USDC dollars',
+        },
       },
     },
   })

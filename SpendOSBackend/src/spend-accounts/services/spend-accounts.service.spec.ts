@@ -30,6 +30,16 @@ describe('SpendAccountsService', () => {
 
   const mockTreasuryContractService = {
     getAccount: jest.fn(),
+    createSpendAccount: jest.fn(),
+    updateSpendAccount: jest.fn(),
+    freezeAccount: jest.fn(),
+    unfreezeAccount: jest.fn(),
+    closeAccount: jest.fn(),
+    updateAllowedChains: jest.fn(),
+    setAutoTopupConfig: jest.fn(),
+    autoTopup: jest.fn(),
+    sweepAccount: jest.fn(),
+    resetPeriod: jest.fn(),
   };
 
   const mockAlertsService = {
@@ -381,6 +391,332 @@ describe('SpendAccountsService', () => {
         order: { accountId: 'ASC' },
       });
       expect(result).toEqual(mockAccounts);
+    });
+  });
+
+  // ==================== NEW WRITE OPERATIONS ====================
+
+  describe('createAccount', () => {
+    it('should create spend account and return result', async () => {
+      const mockResult = {
+        accountId: 5,
+        transactionHash: '0xtxhash123',
+      };
+
+      mockTreasuryContractService.createSpendAccount.mockResolvedValue(
+        mockResult,
+      );
+
+      const result = await service.createAccount(
+        '0xOwner',
+        'Engineering',
+        '1000000000',
+        2592000,
+        '100000000',
+        '200000000',
+        '50000000',
+        '0xApprover',
+        [1, 137],
+      );
+
+      expect(mockTreasuryContractService.createSpendAccount).toHaveBeenCalledWith(
+        '0xOwner',
+        'Engineering',
+        '1000000000',
+        2592000,
+        '100000000',
+        '200000000', // dailyLimit from the test
+        '50000000',
+        '0xApprover',
+        [1, 137],
+      );
+      expect(result).toEqual(mockResult);
+    });
+
+    it('should use provided dailyLimit when specified', async () => {
+      mockTreasuryContractService.createSpendAccount.mockResolvedValue({
+        accountId: 5,
+        transactionHash: '0xtxhash123',
+      });
+
+      await service.createAccount(
+        '0xOwner',
+        'Engineering',
+        '1000000000',
+        2592000,
+        '100000000',
+        '300000000', // custom dailyLimit
+        '50000000',
+        '0xApprover',
+        [1],
+      );
+
+      expect(mockTreasuryContractService.createSpendAccount).toHaveBeenCalledWith(
+        '0xOwner',
+        'Engineering',
+        '1000000000',
+        2592000,
+        '100000000',
+        '300000000',
+        '50000000',
+        '0xApprover',
+        [1],
+      );
+    });
+
+    it('should propagate errors from treasury contract service', async () => {
+      mockTreasuryContractService.createSpendAccount.mockRejectedValue(
+        new Error('Contract error'),
+      );
+
+      await expect(
+        service.createAccount(
+          '0xOwner',
+          'Engineering',
+          '1000000000',
+          2592000,
+          '100000000',
+          '200000000',
+          '50000000',
+          '0xApprover',
+          [1],
+        ),
+      ).rejects.toThrow('Contract error');
+    });
+  });
+
+  describe('updateAccount', () => {
+    it('should update spend account successfully', async () => {
+      mockTreasuryContractService.updateSpendAccount.mockResolvedValue(
+        '0xtxhash456',
+      );
+
+      const result = await service.updateAccount(
+        1,
+        '2000000000',
+        '150000000',
+        '300000000',
+        '75000000',
+        '0xNewApprover',
+      );
+
+      expect(mockTreasuryContractService.updateSpendAccount).toHaveBeenCalledWith(
+        1,
+        '2000000000',
+        '150000000',
+        '300000000',
+        '75000000',
+        '0xNewApprover',
+      );
+      expect(result).toBe('0xtxhash456');
+    });
+
+    it('should handle partial updates with empty strings', async () => {
+      mockTreasuryContractService.updateSpendAccount.mockResolvedValue(
+        '0xtxhash456',
+      );
+
+      await service.updateAccount(1, '2000000000');
+
+      expect(mockTreasuryContractService.updateSpendAccount).toHaveBeenCalledWith(
+        1,
+        '2000000000',
+        '',
+        '',
+        '',
+        '',
+      );
+    });
+
+    it('should propagate errors from treasury contract service', async () => {
+      mockTreasuryContractService.updateSpendAccount.mockRejectedValue(
+        new Error('Update failed'),
+      );
+
+      await expect(service.updateAccount(1, '2000000000')).rejects.toThrow(
+        'Update failed',
+      );
+    });
+  });
+
+  describe('freezeAccount', () => {
+    it('should freeze account successfully', async () => {
+      mockTreasuryContractService.freezeAccount.mockResolvedValue(
+        '0xtxhash789',
+      );
+
+      const result = await service.freezeAccount(1);
+
+      expect(mockTreasuryContractService.freezeAccount).toHaveBeenCalledWith(1);
+      expect(result).toBe('0xtxhash789');
+    });
+
+    it('should propagate errors from treasury contract service', async () => {
+      mockTreasuryContractService.freezeAccount.mockRejectedValue(
+        new Error('Freeze failed'),
+      );
+
+      await expect(service.freezeAccount(1)).rejects.toThrow('Freeze failed');
+    });
+  });
+
+  describe('unfreezeAccount', () => {
+    it('should unfreeze account successfully', async () => {
+      mockTreasuryContractService.unfreezeAccount.mockResolvedValue(
+        '0xtxhash101',
+      );
+
+      const result = await service.unfreezeAccount(1);
+
+      expect(mockTreasuryContractService.unfreezeAccount).toHaveBeenCalledWith(1);
+      expect(result).toBe('0xtxhash101');
+    });
+
+    it('should propagate errors from treasury contract service', async () => {
+      mockTreasuryContractService.unfreezeAccount.mockRejectedValue(
+        new Error('Unfreeze failed'),
+      );
+
+      await expect(service.unfreezeAccount(1)).rejects.toThrow(
+        'Unfreeze failed',
+      );
+    });
+  });
+
+  describe('closeAccount', () => {
+    it('should close account successfully', async () => {
+      mockTreasuryContractService.closeAccount.mockResolvedValue(
+        '0xtxhash202',
+      );
+
+      const result = await service.closeAccount(1);
+
+      expect(mockTreasuryContractService.closeAccount).toHaveBeenCalledWith(1);
+      expect(result).toBe('0xtxhash202');
+    });
+
+    it('should propagate errors from treasury contract service', async () => {
+      mockTreasuryContractService.closeAccount.mockRejectedValue(
+        new Error('Close failed'),
+      );
+
+      await expect(service.closeAccount(1)).rejects.toThrow('Close failed');
+    });
+  });
+
+  describe('updateAllowedChains', () => {
+    it('should update allowed chains successfully', async () => {
+      mockTreasuryContractService.updateAllowedChains.mockResolvedValue(
+        '0xtxhash303',
+      );
+
+      const result = await service.updateAllowedChains(1, [1, 137, 42161]);
+
+      expect(mockTreasuryContractService.updateAllowedChains).toHaveBeenCalledWith(
+        1,
+        [1, 137, 42161],
+      );
+      expect(result).toBe('0xtxhash303');
+    });
+
+    it('should propagate errors from treasury contract service', async () => {
+      mockTreasuryContractService.updateAllowedChains.mockRejectedValue(
+        new Error('Chain update failed'),
+      );
+
+      await expect(service.updateAllowedChains(1, [1])).rejects.toThrow(
+        'Chain update failed',
+      );
+    });
+  });
+
+  describe('configureAutoTopup', () => {
+    it('should configure auto-topup successfully', async () => {
+      mockTreasuryContractService.setAutoTopupConfig.mockResolvedValue(
+        '0xtxhash404',
+      );
+
+      const result = await service.configureAutoTopup(
+        1,
+        '10000000',
+        '50000000',
+      );
+
+      expect(mockTreasuryContractService.setAutoTopupConfig).toHaveBeenCalledWith(
+        1,
+        '10000000',
+        '50000000',
+      );
+      expect(result).toBe('0xtxhash404');
+    });
+
+    it('should propagate errors from treasury contract service', async () => {
+      mockTreasuryContractService.setAutoTopupConfig.mockRejectedValue(
+        new Error('Config failed'),
+      );
+
+      await expect(
+        service.configureAutoTopup(1, '10000000', '50000000'),
+      ).rejects.toThrow('Config failed');
+    });
+  });
+
+  describe('executeAutoTopup', () => {
+    it('should execute auto-topup successfully', async () => {
+      mockTreasuryContractService.autoTopup.mockResolvedValue('0xtxhash505');
+
+      const result = await service.executeAutoTopup(1);
+
+      expect(mockTreasuryContractService.autoTopup).toHaveBeenCalledWith(1);
+      expect(result).toBe('0xtxhash505');
+    });
+
+    it('should propagate errors from treasury contract service', async () => {
+      mockTreasuryContractService.autoTopup.mockRejectedValue(
+        new Error('Topup failed'),
+      );
+
+      await expect(service.executeAutoTopup(1)).rejects.toThrow('Topup failed');
+    });
+  });
+
+  describe('sweepAccount', () => {
+    it('should sweep account successfully', async () => {
+      mockTreasuryContractService.sweepAccount.mockResolvedValue(
+        '0xtxhash606',
+      );
+
+      const result = await service.sweepAccount(1);
+
+      expect(mockTreasuryContractService.sweepAccount).toHaveBeenCalledWith(1);
+      expect(result).toBe('0xtxhash606');
+    });
+
+    it('should propagate errors from treasury contract service', async () => {
+      mockTreasuryContractService.sweepAccount.mockRejectedValue(
+        new Error('Sweep failed'),
+      );
+
+      await expect(service.sweepAccount(1)).rejects.toThrow('Sweep failed');
+    });
+  });
+
+  describe('resetPeriod', () => {
+    it('should reset period successfully', async () => {
+      mockTreasuryContractService.resetPeriod.mockResolvedValue('0xtxhash707');
+
+      const result = await service.resetPeriod(1);
+
+      expect(mockTreasuryContractService.resetPeriod).toHaveBeenCalledWith(1);
+      expect(result).toBe('0xtxhash707');
+    });
+
+    it('should propagate errors from treasury contract service', async () => {
+      mockTreasuryContractService.resetPeriod.mockRejectedValue(
+        new Error('Reset failed'),
+      );
+
+      await expect(service.resetPeriod(1)).rejects.toThrow('Reset failed');
     });
   });
 });

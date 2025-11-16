@@ -6,6 +6,7 @@ import type { Queue } from 'bull';
 import { SpendRequestsService } from './spend-requests.service';
 import { SpendRequest } from '../entities/spend-request.entity';
 import { SpendStatus } from '../../common/enums';
+import { TreasuryContractService } from '../../blockchain/services/treasury-contract.service';
 import type {
   SpendRequestedEvent,
   SpendApprovedEvent,
@@ -18,6 +19,7 @@ describe('SpendRequestsService', () => {
   let service: SpendRequestsService;
   let repository: Repository<SpendRequest>;
   let queue: Queue;
+  let treasuryContractService: any;
 
   const mockQueryBuilder = {
     andWhere: jest.fn().mockReturnThis(),
@@ -39,6 +41,12 @@ describe('SpendRequestsService', () => {
     add: jest.fn(),
   };
 
+  const mockTreasuryContractService = {
+    requestSpend: jest.fn(),
+    approveSpend: jest.fn(),
+    rejectSpend: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -51,6 +59,10 @@ describe('SpendRequestsService', () => {
           provide: getQueueToken('spend-execution'),
           useValue: mockQueue,
         },
+        {
+          provide: TreasuryContractService,
+          useValue: mockTreasuryContractService,
+        },
       ],
     }).compile();
 
@@ -59,6 +71,9 @@ describe('SpendRequestsService', () => {
       getRepositoryToken(SpendRequest),
     );
     queue = module.get<Queue>(getQueueToken('spend-execution'));
+    treasuryContractService = module.get<TreasuryContractService>(
+      TreasuryContractService,
+    );
 
     jest.clearAllMocks();
   });
@@ -156,6 +171,12 @@ describe('SpendRequestsService', () => {
         timestamp: new Date(),
       };
 
+      // Mock findOne to return an existing request (race condition handling)
+      mockRepository.findOne.mockResolvedValue({
+        requestId: 1,
+        accountId: 10,
+        status: SpendStatus.PENDING_APPROVAL,
+      });
       mockRepository.update.mockResolvedValue({ affected: 1 });
       mockQueue.add.mockResolvedValue({});
 
@@ -193,6 +214,12 @@ describe('SpendRequestsService', () => {
         timestamp: new Date(),
       };
 
+      // Mock findOne to return an existing request
+      mockRepository.findOne.mockResolvedValue({
+        requestId: 5,
+        accountId: 10,
+        status: SpendStatus.PENDING_APPROVAL,
+      });
       mockRepository.update.mockResolvedValue({ affected: 1 });
       mockQueue.add.mockResolvedValue({});
 
@@ -403,6 +430,173 @@ describe('SpendRequestsService', () => {
       const result = await service.findByAccount(999);
 
       expect(result).toEqual([]);
+    });
+  });
+
+  // ==================== NEW WRITE OPERATIONS ====================
+
+  describe('createRequest', () => {
+    it('should create spend request and return result', async () => {
+      const mockResult = {
+        requestId: 15,
+        transactionHash: '0xtxhash123',
+      };
+
+      mockTreasuryContractService.requestSpend.mockResolvedValue(mockResult);
+
+      const result = await service.createRequest(
+        1,
+        '1000000',
+        84532,
+        '0xDestination',
+        'Test spend',
+        '0xRequester',
+      );
+
+      expect(mockTreasuryContractService.requestSpend).toHaveBeenCalledWith(
+        1,
+        '1000000',
+        84532,
+        '0xDestination',
+        'Test spend',
+      );
+      expect(result).toEqual(mockResult);
+    });
+
+    it('should propagate errors from treasury contract service', async () => {
+      mockTreasuryContractService.requestSpend.mockRejectedValue(
+        new Error('Request failed'),
+      );
+
+      await expect(
+        service.createRequest(
+          1,
+          '1000000',
+          84532,
+          '0xDestination',
+          'Test spend',
+          '0xRequester',
+        ),
+      ).rejects.toThrow('Request failed');
+    });
+
+    it('should pass all parameters correctly to contract service', async () => {
+      mockTreasuryContractService.requestSpend.mockResolvedValue({
+        requestId: 20,
+        transactionHash: '0xtxhash456',
+      });
+
+      await service.createRequest(
+        5,
+        '2500000',
+        1,
+        '0xAnotherDestination',
+        'Cloud infrastructure costs',
+        '0xUser123',
+      );
+
+      expect(mockTreasuryContractService.requestSpend).toHaveBeenCalledWith(
+        5,
+        '2500000',
+        1,
+        '0xAnotherDestination',
+        'Cloud infrastructure costs',
+      );
+    });
+  });
+
+  describe('approveRequest', () => {
+    it('should approve spend request successfully', async () => {
+      mockTreasuryContractService.approveSpend.mockResolvedValue(
+        '0xtxhash789',
+      );
+
+      const result = await service.approveRequest(15);
+
+      expect(mockTreasuryContractService.approveSpend).toHaveBeenCalledWith(15);
+      expect(result).toBe('0xtxhash789');
+    });
+
+    it('should propagate errors from treasury contract service', async () => {
+      mockTreasuryContractService.approveSpend.mockRejectedValue(
+        new Error('Approval failed'),
+      );
+
+      await expect(service.approveRequest(15)).rejects.toThrow(
+        'Approval failed',
+      );
+    });
+
+    it('should handle approval of different request IDs', async () => {
+      mockTreasuryContractService.approveSpend.mockResolvedValue(
+        '0xtxhash101',
+      );
+
+      const result = await service.approveRequest(999);
+
+      expect(mockTreasuryContractService.approveSpend).toHaveBeenCalledWith(
+        999,
+      );
+      expect(result).toBe('0xtxhash101');
+    });
+  });
+
+  describe('rejectRequest', () => {
+    it('should reject spend request with reason successfully', async () => {
+      mockTreasuryContractService.rejectSpend.mockResolvedValue(
+        '0xtxhash202',
+      );
+
+      const result = await service.rejectRequest(
+        15,
+        'Insufficient budget available',
+      );
+
+      expect(mockTreasuryContractService.rejectSpend).toHaveBeenCalledWith(
+        15,
+        'Insufficient budget available',
+      );
+      expect(result).toBe('0xtxhash202');
+    });
+
+    it('should propagate errors from treasury contract service', async () => {
+      mockTreasuryContractService.rejectSpend.mockRejectedValue(
+        new Error('Rejection failed'),
+      );
+
+      await expect(
+        service.rejectRequest(15, 'Invalid request'),
+      ).rejects.toThrow('Rejection failed');
+    });
+
+    it('should handle rejection with different reasons', async () => {
+      mockTreasuryContractService.rejectSpend.mockResolvedValue(
+        '0xtxhash303',
+      );
+
+      const result = await service.rejectRequest(
+        20,
+        'Account is frozen',
+      );
+
+      expect(mockTreasuryContractService.rejectSpend).toHaveBeenCalledWith(
+        20,
+        'Account is frozen',
+      );
+      expect(result).toBe('0xtxhash303');
+    });
+
+    it('should handle empty reason string', async () => {
+      mockTreasuryContractService.rejectSpend.mockResolvedValue(
+        '0xtxhash404',
+      );
+
+      await service.rejectRequest(25, '');
+
+      expect(mockTreasuryContractService.rejectSpend).toHaveBeenCalledWith(
+        25,
+        '',
+      );
     });
   });
 });

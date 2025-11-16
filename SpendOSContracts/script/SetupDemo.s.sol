@@ -15,9 +15,28 @@ contract SetupDemoScript is Script {
     address admin;
     address backendWalletAddress;
 
-    // Chain IDs
+    // Gateway Supported Chain IDs - Testnet
     uint256 constant ARC_TESTNET = 5042002;
+    uint256 constant AVALANCHE_FUJI = 43113;
     uint256 constant BASE_SEPOLIA = 84532;
+    uint256 constant ETHEREUM_SEPOLIA = 11155111;
+    uint256 constant HYPEREVM_TESTNET = 998;
+    uint256 constant SEI_ATLANTIC = 1328;
+    uint256 constant SONIC_TESTNET = 57054;
+    uint256 constant WORLD_CHAIN_SEPOLIA = 4801;
+
+    // Gateway Supported Chain IDs - Mainnet
+    uint256 constant ARBITRUM = 42161;
+    uint256 constant AVALANCHE = 43114;
+    uint256 constant BASE = 8453;
+    uint256 constant ETHEREUM = 1;
+    uint256 constant HYPEREVM = 999;
+    uint256 constant OPTIMISM = 10;
+    uint256 constant POLYGON = 137;
+    uint256 constant SEI = 1329;
+    uint256 constant SONIC = 146;
+    uint256 constant UNICHAIN = 130;
+    uint256 constant WORLD_CHAIN = 480;
 
     function setUp() public {
         // Load environment variables
@@ -46,11 +65,30 @@ contract SetupDemoScript is Script {
 
         vm.startBroadcast(deployerPrivateKey);
 
+        // Add all Gateway-supported testnet chains to the Treasury
+        console.log("Adding Gateway-supported chains to Treasury...");
+        treasury.setChainSupport(ARC_TESTNET, true);
+        treasury.setChainSupport(AVALANCHE_FUJI, true);
+        treasury.setChainSupport(BASE_SEPOLIA, true);
+        treasury.setChainSupport(ETHEREUM_SEPOLIA, true);
+        treasury.setChainSupport(HYPEREVM_TESTNET, true);
+        treasury.setChainSupport(SEI_ATLANTIC, true);
+        treasury.setChainSupport(SONIC_TESTNET, true);
+        treasury.setChainSupport(WORLD_CHAIN_SEPOLIA, true);
+        console.log("- Added 8 testnet chains");
+        console.log("");
+
         // Demo Account 1: Marketing Department
         console.log("Creating Demo Account 1: Marketing Department...");
-        uint256[] memory marketingChains = new uint256[](2);
+        uint256[] memory marketingChains = new uint256[](8);
         marketingChains[0] = ARC_TESTNET;
-        marketingChains[1] = BASE_SEPOLIA;
+        marketingChains[1] = AVALANCHE_FUJI;
+        marketingChains[2] = BASE_SEPOLIA;
+        marketingChains[3] = ETHEREUM_SEPOLIA;
+        marketingChains[4] = HYPEREVM_TESTNET;
+        marketingChains[5] = SEI_ATLANTIC;
+        marketingChains[6] = SONIC_TESTNET;
+        marketingChains[7] = WORLD_CHAIN_SEPOLIA;
 
         uint256 marketingAccountId = treasury.createSpendAccount(
             deployer, // owner (for demo, same as deployer)
@@ -70,13 +108,22 @@ contract SetupDemoScript is Script {
         console.log("- Per-tx limit: 500 USDC");
         console.log("- Daily limit: 1000 USDC");
         console.log("- Approval threshold: 200 USDC");
-        console.log("- Chains: Arc Testnet, Base Sepolia");
+        console.log("- Supported Chains: All Gateway Testnet chains");
+        console.log("  (Arc, Avalanche Fuji, Base Sepolia, Ethereum Sepolia,");
+        console.log("   HyperEVM Testnet, Sei Atlantic, Sonic Testnet, World Chain Sepolia)");
         console.log("");
 
         // Demo Account 2: Engineering Department (High Budget)
         console.log("Creating Demo Account 2: Engineering Department...");
-        uint256[] memory engineeringChains = new uint256[](1);
+        uint256[] memory engineeringChains = new uint256[](8);
         engineeringChains[0] = ARC_TESTNET;
+        engineeringChains[1] = AVALANCHE_FUJI;
+        engineeringChains[2] = BASE_SEPOLIA;
+        engineeringChains[3] = ETHEREUM_SEPOLIA;
+        engineeringChains[4] = HYPEREVM_TESTNET;
+        engineeringChains[5] = SEI_ATLANTIC;
+        engineeringChains[6] = SONIC_TESTNET;
+        engineeringChains[7] = WORLD_CHAIN_SEPOLIA;
 
         uint256 engineeringAccountId = treasury.createSpendAccount(
             deployer, // owner
@@ -96,14 +143,22 @@ contract SetupDemoScript is Script {
         console.log("- Per-tx limit: 1000 USDC");
         console.log("- Daily limit: 2000 USDC");
         console.log("- Approval threshold: 500 USDC");
-        console.log("- Chains: Arc Testnet");
+        console.log("- Supported Chains: All Gateway Testnet chains");
+        console.log("  (Arc, Avalanche Fuji, Base Sepolia, Ethereum Sepolia,");
+        console.log("   HyperEVM Testnet, Sei Atlantic, Sonic Testnet, World Chain Sepolia)");
         console.log("");
 
         // Demo Account 3: Operations (Lower Budget, Auto-Approve)
         console.log("Creating Demo Account 3: Operations Department...");
-        uint256[] memory operationsChains = new uint256[](2);
+        uint256[] memory operationsChains = new uint256[](8);
         operationsChains[0] = ARC_TESTNET;
-        operationsChains[1] = BASE_SEPOLIA;
+        operationsChains[1] = AVALANCHE_FUJI;
+        operationsChains[2] = BASE_SEPOLIA;
+        operationsChains[3] = ETHEREUM_SEPOLIA;
+        operationsChains[4] = HYPEREVM_TESTNET;
+        operationsChains[5] = SEI_ATLANTIC;
+        operationsChains[6] = SONIC_TESTNET;
+        operationsChains[7] = WORLD_CHAIN_SEPOLIA;
 
         uint256 operationsAccountId = treasury.createSpendAccount(
             deployer, // owner
@@ -123,7 +178,9 @@ contract SetupDemoScript is Script {
         console.log("- Per-tx limit: 200 USDC");
         console.log("- Daily limit: 500 USDC");
         console.log("- Approval threshold: 200 USDC (auto-approve all)");
-        console.log("- Chains: Arc Testnet, Base Sepolia");
+        console.log("- Supported Chains: All Gateway Testnet chains");
+        console.log("  (Arc, Avalanche Fuji, Base Sepolia, Ethereum Sepolia,");
+        console.log("   HyperEVM Testnet, Sei Atlantic, Sonic Testnet, World Chain Sepolia)");
         console.log("");
 
         // Configure auto-topup for Marketing account

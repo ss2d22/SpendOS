@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { TreasuryService } from './treasury.service';
 import { BalanceSyncService } from './balance-sync.service';
 import { AlertsService } from '../../alerts/services/alerts.service';
+import { TreasuryContractService } from '../../blockchain/services/treasury-contract.service';
 import { FundingEvent } from '../entities/funding-event.entity';
 import { SpendAccount } from '../../spend-accounts/entities/spend-account.entity';
 import { FundingDirection, AlertType, AlertSeverity } from '../../common/enums';
@@ -20,6 +21,7 @@ describe('TreasuryService', () => {
   let spendAccountRepository: Repository<SpendAccount>;
   let balanceSyncService: BalanceSyncService;
   let alertsService: AlertsService;
+  let treasuryContractService: TreasuryContractService;
 
   const mockFundingEventRepository = {
     create: jest.fn(),
@@ -38,6 +40,13 @@ describe('TreasuryService', () => {
 
   const mockAlertsService = {
     createAlert: jest.fn(),
+  };
+
+  const mockTreasuryContractService = {
+    recordInboundFunding: jest.fn(),
+    pause: jest.fn(),
+    unpause: jest.fn(),
+    transferAdmin: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -60,6 +69,10 @@ describe('TreasuryService', () => {
           provide: AlertsService,
           useValue: mockAlertsService,
         },
+        {
+          provide: TreasuryContractService,
+          useValue: mockTreasuryContractService,
+        },
       ],
     }).compile();
 
@@ -72,6 +85,9 @@ describe('TreasuryService', () => {
     );
     balanceSyncService = module.get<BalanceSyncService>(BalanceSyncService);
     alertsService = module.get<AlertsService>(AlertsService);
+    treasuryContractService = module.get<TreasuryContractService>(
+      TreasuryContractService,
+    );
 
     jest.clearAllMocks();
   });
@@ -333,6 +349,124 @@ describe('TreasuryService', () => {
 
       // Should not create an alert for unpause
       expect(mockAlertsService.createAlert).not.toHaveBeenCalled();
+    });
+  });
+
+  // ==================== NEW WRITE OPERATIONS ====================
+
+  describe('fundTreasury', () => {
+    it('should fund treasury successfully', async () => {
+      mockTreasuryContractService.recordInboundFunding.mockResolvedValue(
+        '0xtxhash123',
+      );
+
+      const result = await service.fundTreasury('1000000000', 'gw-tx-123');
+
+      expect(mockTreasuryContractService.recordInboundFunding).toHaveBeenCalledWith(
+        '1000000000',
+        'gw-tx-123',
+      );
+      expect(result).toBe('0xtxhash123');
+    });
+
+    it('should propagate errors from treasury contract service', async () => {
+      mockTreasuryContractService.recordInboundFunding.mockRejectedValue(
+        new Error('Funding failed'),
+      );
+
+      await expect(
+        service.fundTreasury('1000000000', 'gw-tx-123'),
+      ).rejects.toThrow('Funding failed');
+    });
+
+    it('should handle different amounts and gateway transaction IDs', async () => {
+      mockTreasuryContractService.recordInboundFunding.mockResolvedValue(
+        '0xtxhash456',
+      );
+
+      const result = await service.fundTreasury('500000000', 'gw-tx-456');
+
+      expect(mockTreasuryContractService.recordInboundFunding).toHaveBeenCalledWith(
+        '500000000',
+        'gw-tx-456',
+      );
+      expect(result).toBe('0xtxhash456');
+    });
+  });
+
+  describe('pauseContract', () => {
+    it('should pause contract successfully', async () => {
+      mockTreasuryContractService.pause.mockResolvedValue('0xtxhash789');
+
+      const result = await service.pauseContract();
+
+      expect(mockTreasuryContractService.pause).toHaveBeenCalled();
+      expect(result).toBe('0xtxhash789');
+    });
+
+    it('should propagate errors from treasury contract service', async () => {
+      mockTreasuryContractService.pause.mockRejectedValue(
+        new Error('Pause failed'),
+      );
+
+      await expect(service.pauseContract()).rejects.toThrow('Pause failed');
+    });
+  });
+
+  describe('unpauseContract', () => {
+    it('should unpause contract successfully', async () => {
+      mockTreasuryContractService.unpause.mockResolvedValue('0xtxhash101');
+
+      const result = await service.unpauseContract();
+
+      expect(mockTreasuryContractService.unpause).toHaveBeenCalled();
+      expect(result).toBe('0xtxhash101');
+    });
+
+    it('should propagate errors from treasury contract service', async () => {
+      mockTreasuryContractService.unpause.mockRejectedValue(
+        new Error('Unpause failed'),
+      );
+
+      await expect(service.unpauseContract()).rejects.toThrow('Unpause failed');
+    });
+  });
+
+  describe('transferAdmin', () => {
+    it('should transfer admin rights successfully', async () => {
+      mockTreasuryContractService.transferAdmin.mockResolvedValue(
+        '0xtxhash202',
+      );
+
+      const result = await service.transferAdmin('0xNewAdmin');
+
+      expect(mockTreasuryContractService.transferAdmin).toHaveBeenCalledWith(
+        '0xNewAdmin',
+      );
+      expect(result).toBe('0xtxhash202');
+    });
+
+    it('should propagate errors from treasury contract service', async () => {
+      mockTreasuryContractService.transferAdmin.mockRejectedValue(
+        new Error('Transfer failed'),
+      );
+
+      await expect(service.transferAdmin('0xNewAdmin')).rejects.toThrow(
+        'Transfer failed',
+      );
+    });
+
+    it('should handle different admin addresses', async () => {
+      mockTreasuryContractService.transferAdmin.mockResolvedValue(
+        '0xtxhash303',
+      );
+
+      const result = await service.transferAdmin('0xAnotherAdmin');
+
+      expect(mockTreasuryContractService.transferAdmin).toHaveBeenCalledWith(
+        '0xAnotherAdmin',
+      );
+      expect(result).toBe('0xtxhash303');
     });
   });
 });

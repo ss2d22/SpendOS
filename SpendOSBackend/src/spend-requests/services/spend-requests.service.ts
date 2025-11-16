@@ -6,6 +6,7 @@ import { InjectQueue } from '@nestjs/bull';
 import type { Queue } from 'bull';
 import { SpendRequest } from '../entities/spend-request.entity';
 import { SpendStatus } from '../../common/enums';
+import { TreasuryContractService } from '../../blockchain/services/treasury-contract.service';
 import type {
   SpendRequestedEvent,
   SpendApprovedEvent,
@@ -23,6 +24,7 @@ export class SpendRequestsService {
     private readonly spendRequestRepository: Repository<SpendRequest>,
     @InjectQueue('spend-execution')
     private readonly spendExecutionQueue: Queue,
+    private readonly treasuryContractService: TreasuryContractService,
   ) {}
 
   @OnEvent('spend.requested')
@@ -95,16 +97,19 @@ export class SpendRequestsService {
       },
     );
 
-    // Enqueue spend for execution
+    // Enqueue spend for execution with unique job ID to prevent duplicates
     await this.spendExecutionQueue.add(
       'execute-spend',
       { requestId: event.requestId },
       {
+        jobId: `spend-${event.requestId}`, // Unique ID prevents duplicate jobs
         attempts: 3,
         backoff: {
           type: 'exponential',
           delay: 5000,
         },
+        removeOnComplete: true, // Clean up completed jobs
+        removeOnFail: false, // Keep failed jobs for debugging
       },
     );
 
@@ -182,5 +187,59 @@ export class SpendRequestsService {
       where: { accountId },
       order: { createdAt: 'DESC' },
     });
+  }
+
+  // ==================== NEW WRITE OPERATIONS ====================
+
+  async createRequest(
+    accountId: number,
+    amount: string,
+    chainId: number,
+    destinationAddress: string,
+    description: string,
+    requesterAddress: string,
+  ): Promise<{ requestId: number; transactionHash: string }> {
+    this.logger.log(
+      `Creating spend request for account ${accountId}: ${amount} USDC`,
+    );
+
+    const result = await this.treasuryContractService.requestSpend(
+      accountId,
+      amount,
+      chainId,
+      destinationAddress,
+      description,
+    );
+
+    this.logger.log(
+      `Spend request created: ID ${result.requestId}, tx: ${result.transactionHash}`,
+    );
+    return result;
+  }
+
+  async approveRequest(requestId: number): Promise<string> {
+    this.logger.log(`Approving spend request ${requestId}`);
+
+    const transactionHash =
+      await this.treasuryContractService.approveSpend(requestId);
+
+    this.logger.log(
+      `Spend request ${requestId} approved, tx: ${transactionHash}`,
+    );
+    return transactionHash;
+  }
+
+  async rejectRequest(requestId: number, reason: string): Promise<string> {
+    this.logger.log(`Rejecting spend request ${requestId}: ${reason}`);
+
+    const transactionHash = await this.treasuryContractService.rejectSpend(
+      requestId,
+      reason,
+    );
+
+    this.logger.log(
+      `Spend request ${requestId} rejected, tx: ${transactionHash}`,
+    );
+    return transactionHash;
   }
 }

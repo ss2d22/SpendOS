@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { SpendAccountsService } from './services/spend-accounts.service';
+import { AccountSyncSchedulerService } from './services/account-sync-scheduler.service';
 import { SpendAccountsController } from './controllers/spend-accounts.controller';
 import { SpendAccount } from './entities/spend-account.entity';
 import { BlockchainModule } from '../blockchain/blockchain.module';
@@ -13,7 +14,7 @@ import { AlertsModule } from '../alerts/alerts.module';
     AlertsModule,
   ],
   controllers: [SpendAccountsController],
-  providers: [SpendAccountsService],
+  providers: [SpendAccountsService, AccountSyncSchedulerService],
   exports: [SpendAccountsService],
 })
 export class SpendAccountsModule {}

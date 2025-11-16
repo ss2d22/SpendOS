@@ -27,14 +27,15 @@ export default () => ({
 
   backend: {
     privateKey: process.env.BACKEND_PRIVATE_KEY,
+    adminPrivateKey: process.env.ADMIN_PRIVATE_KEY,
   },
 
   gateway: {
     apiBaseUrl:
       process.env.GATEWAY_API_BASE_URL ||
       'https://gateway-api-testnet.circle.com/v1',
-    // Gateway uses the backend wallet (same as treasury operator)
-    walletPrivateKey: process.env.BACKEND_PRIVATE_KEY,
+    // Gateway uses the admin wallet (holds unified USDC balance)
+    walletPrivateKey: process.env.ADMIN_PRIVATE_KEY,
   },
 
   jwt: {

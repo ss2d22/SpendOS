@@ -22,7 +22,29 @@ import { ArcProviderService } from '../../blockchain/services/arc-provider.servi
  * Gateway Wallet Contract Addresses:
  * - Arc Testnet: 0x0077777d7EBA4688BDeF3E311b846F25870A19B9
  * - USDC on Arc Testnet: 0x3600000000000000000000000000000000000000
+ *
+ * Domain Mappings (Testnet):
+ * - Domain 0: Ethereum Sepolia
+ * - Domain 1: Avalanche Fuji
+ * - Domain 6: Base Sepolia
+ * - Domain 26: Arc Testnet
  */
+// Chain ID to Domain mapping for Gateway (Testnet)
+const CHAIN_TO_DOMAIN: Record<number, number> = {
+  5042002: 26, // Arc Testnet
+  84532: 6, // Base Sepolia
+  11155111: 0, // Ethereum Sepolia
+  43113: 1, // Avalanche Fuji
+};
+
+// USDC token addresses per chain (Testnet)
+const USDC_ADDRESSES: Record<number, string> = {
+  5042002: '0x3600000000000000000000000000000000000000', // Arc Testnet
+  84532: '0x036CbD53842c5426634e7929541eC2318f3dCF7e', // Base Sepolia
+  11155111: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238', // Ethereum Sepolia
+  43113: '0x5425890298aed601595a70AB815c96711a31Bc65', // Avalanche Fuji
+};
+
 @Injectable()
 export class GatewayApiService implements OnModuleInit {
   private readonly logger = new Logger(GatewayApiService.name);
@@ -60,18 +82,115 @@ export class GatewayApiService implements OnModuleInit {
   }
 
   /**
-   * Get unified USDC balance for an address across all chains
-   * Query the Gateway Wallet contract directly for balance.
-   * @param token - Token symbol (e.g., 'USDC')
+   * Get unified USDC balance for an address across all supported chains
+   * Uses Gateway API to query balances across multiple domains efficiently.
    * @param address - User's wallet address
+   * @param chainIds - Optional array of chain IDs to query (defaults to all supported chains)
    */
-  async getUnifiedBalance(token: string, address: string): Promise<any> {
+  async getUnifiedBalance(
+    address: string,
+    chainIds?: number[],
+  ): Promise<{
+    totalBalance: string;
+    totalBalanceUsdc: string;
+    balances: Array<{
+      chainId: number;
+      domain: number;
+      balance: string;
+      balanceUsdc: string;
+      token: string;
+    }>;
+    address: string;
+  }> {
     try {
+      // Use all supported chains if not specified
+      const chains = chainIds || Object.keys(CHAIN_TO_DOMAIN).map(Number);
+
       this.logger.log(
-        `Fetching ${token} balance for ${address} from Gateway Wallet contract`,
+        `Fetching unified USDC balance for ${address} across ${chains.length} chains`,
       );
 
-      // Query Gateway Wallet contract directly
+      // Build sources array for Gateway API
+      const sources = chains.map((chainId) => ({
+        depositor: address,
+        domain: CHAIN_TO_DOMAIN[chainId],
+      }));
+
+      // Query Gateway API for balances across all domains
+      // Note: Gateway API expects "USDC" as the token identifier
+      const response = await firstValueFrom(
+        this.httpService.post(
+          `${this.apiBaseUrl}/balances`,
+          {
+            token: 'USDC',
+            sources,
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          },
+        ),
+      );
+
+      const balancesData = response.data;
+      this.logger.debug('Gateway balances response:', balancesData);
+
+      // Parse and format balances
+      const balances = chains.map((chainId, index) => {
+        const domain = CHAIN_TO_DOMAIN[chainId];
+        const balanceData = balancesData.balances?.[index] || {
+          balance: '0',
+        };
+
+        // Gateway API returns balance as decimal USDC (e.g., "22.497825")
+        // We need to convert to micro USDC (integer with 6 decimals)
+        const balanceDecimal = balanceData.balance || '0';
+        const balanceNumber = parseFloat(balanceDecimal);
+        const balanceMicroUsdc = Math.floor(balanceNumber * 1e6).toString();
+
+        return {
+          chainId,
+          domain,
+          balance: balanceMicroUsdc,
+          balanceUsdc: balanceNumber.toFixed(6),
+          token: USDC_ADDRESSES[chainId],
+        };
+      });
+
+      // Calculate total balance across all chains
+      const totalBalance = balances
+        .reduce((sum, b) => sum + BigInt(b.balance), BigInt(0))
+        .toString();
+      const totalBalanceUsdc = (Number(totalBalance) / 1e6).toFixed(6);
+
+      this.logger.log(
+        `Unified balance: ${totalBalance} micro USDC (${totalBalanceUsdc} USDC)`,
+      );
+
+      return {
+        totalBalance,
+        totalBalanceUsdc,
+        balances,
+        address,
+      };
+    } catch (error) {
+      this.logger.error('Failed to fetch unified balance', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get balance on Arc Testnet only (Gateway Wallet contract query)
+   * @param address - User's wallet address
+   */
+  async getArcBalance(address: string): Promise<any> {
+    try {
+      this.logger.log(
+        `Fetching Arc Testnet balance for ${address} from Gateway Wallet contract`,
+      );
+
+      // Query Gateway Wallet contract directly on Arc Testnet
       const availableBalance =
         await this.gatewayWalletContract.availableBalance(
           this.usdcAddress,
@@ -79,18 +198,22 @@ export class GatewayApiService implements OnModuleInit {
         );
 
       const balance = availableBalance.toString();
+      const balanceUsdc = (Number(balance) / 1e6).toFixed(6);
+
       this.logger.log(
-        `Gateway balance: ${balance} (${Number(balance) / 1e6} USDC)`,
+        `Arc Gateway balance: ${balance} (${balanceUsdc} USDC)`,
       );
 
       return {
         balance,
-        available: balance,
+        balanceUsdc,
         token: this.usdcAddress,
+        chainId: 5042002,
+        domain: 26,
         address,
       };
     } catch (error) {
-      this.logger.error('Failed to fetch unified balance', error);
+      this.logger.error('Failed to fetch Arc balance', error);
       throw error;
     }
   }

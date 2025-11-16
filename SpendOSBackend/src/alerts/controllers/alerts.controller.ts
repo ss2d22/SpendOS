@@ -148,9 +148,10 @@ export class AlertsController {
   @ApiResponse({ status: 404, description: 'Alert not found' })
   async acknowledge(
     @Param('id') id: string,
-    @Body() body: { acknowledged: boolean },
+    @Body() body?: { acknowledged?: boolean },
   ) {
-    if (body.acknowledged) {
+    // If no body or acknowledged is not explicitly false, acknowledge the alert
+    if (!body || body.acknowledged !== false) {
       return this.alertsService.acknowledge(id);
     }
   }
