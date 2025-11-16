@@ -102,7 +102,6 @@ ARC_WS_URL=wss://your-arc-ws-url
 TREASURY_ADDRESS=0x... # Your deployed Treasury contract
 
 # Gateway
-GATEWAY_WALLET_PRIVATE_KEY=0x... # Private key for Gateway-enabled wallet
 GATEWAY_API_BASE_URL=https://gateway-api-testnet.circle.com/v1
 ```
 
