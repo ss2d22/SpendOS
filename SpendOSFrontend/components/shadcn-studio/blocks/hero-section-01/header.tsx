@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/navigation-menu'
 
 import { cn } from '@/lib/utils'
+import { ModeToggle } from '@/components/ui/mode-toggle'
 
 
 export type NavigationSection = {
@@ -52,10 +53,13 @@ const Header = ({ navigationData, className }: HeaderProps) => {
           </NavigationMenuList>
         </NavigationMenu>
 
-        {/* Login Button */}
-        <Button className='rounded-lg max-md:hidden' asChild>
-          <a href='/auth/login'>Login</a>
-        </Button>
+        <div className='flex items-center gap-3'>
+          <ModeToggle />
+          <Button className='rounded-lg max-md:hidden' asChild>
+            <a href='/auth/login'>Login</a>
+          </Button>
+        </div>
+
 
         {/* Navigation for small screens */}
         <div className='flex gap-4 md:hidden'>
